@@ -1,0 +1,32 @@
+
+
+
+nwork=/scratch/leuven/325/vsc32528/data_freeze_Jun2021_libds_qc
+mkdir $nwork
+export NXF_WORK=$nwork
+
+module load Nextflow
+
+#VSN=/staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis/nextflow/vsn__atac_preprocess2/vsn-pipelines/main_atac.nf
+VSN=/staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis/nextflow/vsn__atac-qc/vsn-pipelines/main_atac.nf
+
+nextflow config $VSN \
+    -profile atac_qc_filtering,bam,fragments,pycistopic_hg38,vsc \
+    > atac_qc.config
+
+##################################################
+# run:
+
+nextflow -C atac_qc.config run $VSN -entry atac_qc_filtering --quiet -resume
+
+
+
+
+
+
+
+
+
+
+
+

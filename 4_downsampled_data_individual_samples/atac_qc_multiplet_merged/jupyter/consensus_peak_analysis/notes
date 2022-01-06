@@ -1,0 +1,49 @@
+
+
+module load HOMER
+module load Seurat
+
+
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/Broad_1/Broad_1__consensus_regions.bed Broad_1.bed
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/Broad_2/Broad_2__consensus_regions.bed Broad_2.bed
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/Broad_mito_1/Broad_mito_1__consensus_regions.bed Broad_mito_1.bed
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/Broad_mito_2/Broad_mito_2__consensus_regions.bed Broad_mito_2.bed
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/CNAG_1/CNAG_1__consensus_regions.bed CNAG_1.bed
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/CNAG_2/CNAG_2__consensus_regions.bed CNAG_2.bed
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/s3atac/s3atac__consensus_regions.bed s3atac.bed
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/Sanger_1/Sanger_1__consensus_regions.bed Sanger_1.bed
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/Sanger_2/Sanger_2__consensus_regions.bed Sanger_2.bed
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/Stanford_1/Stanford_1__consensus_regions.bed Stanford_1.bed
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/Stanford_2/Stanford_2__consensus_regions.bed Stanford_2.bed
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/VIB_1/VIB_1__consensus_regions.bed VIB_1.bed
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/VIB_2/VIB_2__consensus_regions.bed VIB_2.bed
+ln -s /staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021_library_downsampled/atac_qc_multiplet_merged/jupyter/consensus_peak_calling/merged/merged__consensus_regions.bed merged.bed
+
+
+
+upset_plot=/staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021/atac_qc_multiplet_merged/jupyter/consensus_peak_analysis/multi_peaks_UpSet_plot.R
+
+odir="consensus"
+mkdir "${odir}"
+
+mergePeaks -d given \
+    Broad_1.bed \
+    Broad_2.bed \
+    Broad_mito_1.bed \
+    Broad_mito_2.bed \
+    CNAG_1.bed \
+    CNAG_2.bed \
+    s3atac.bed \
+    Sanger_1.bed \
+    Sanger_2.bed \
+    Stanford_1.bed \
+    Stanford_2.bed \
+    VIB_1.bed \
+    VIB_2.bed \
+    -prefix "${odir}"/mergepeaks -venn "${odir}"/venn.txt -matrix "${odir}"/matrix.txt
+
+Rscript --vanilla "${upset_plot}" "Library downsampled dataset" "${odir}"/venn.txt
+
+
+
+

@@ -1,0 +1,267 @@
+
+singularity run --cleanenv -H $PWD -B /lustre1,/staging,${VSC_SCRATCH}/tmp:/tmp /staging/leuven/stg_00002/lcb/cflerin/containers/cflerin-seurat-4.0.3-plus.sif R
+
+
+
+
+# RNA-ATAC integration
+################################################################################
+# https://satijalab.org/seurat/articles/atacseq_integration_vignette.html
+
+library(Seurat)
+library(SeuratDisk)
+library(Signac)
+library(EnsDb.Hsapiens.v86)
+library(ggplot2)
+
+################################################################################
+################################################################################
+# reference data:
+################################################################################
+
+f_ref = '/staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/scRNA/cell_type_classification/seruat/reference/pbmc_ssc_mat.rds'
+f_meta = '/staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/scRNA/cell_type_classification/seruat/reference/pbmc_ssc_metadata.rds'
+pbmc.data <- readRDS(f_ref)
+pbmc.metadata <- readRDS(f_meta)
+
+pbmc <- CreateSeuratObject(counts = pbmc.data, meta.data = pbmc.metadata)
+pbmc <- subset(pbmc, subset = nFeature_RNA > 200)
+
+pbmc.list <- SplitObject(pbmc, split.by = "Method")
+#pbmc.list$bench = qdata
+
+for (i in names(pbmc.list)) {
+    pbmc.list[[i]] = NormalizeData(pbmc.list[[i]])
+    pbmc.list[[i]] = FindVariableFeatures(pbmc.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+    pbmc.list[[i]] = ScaleData(pbmc.list[[i]])
+    pbmc.list[[i]] = RunPCA(pbmc.list[[i]])
+    pbmc.list[[i]] = RunUMAP(pbmc.list[[i]], dims = 1:30)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##################################################
+### integrate reference:
+
+reference.list <- pbmc.list[
+    c("10x Chromium (v2) A", "10x Chromium (v2) B", "10x Chromium (v3)", "10x Chromium (v2)")
+]
+#reference.list$query = qdata
+#pbmc.ref = pbmc.list$`10x Chromium (v3)`
+pbmc.anchors <- FindIntegrationAnchors(object.list = reference.list, dims = 1:30)
+
+pbmc.integrated <- IntegrateData(anchorset = pbmc.anchors, dims = 1:30)
+DefaultAssay(pbmc.integrated) <- "integrated"
+
+pbmc.integrated <- ScaleData(pbmc.integrated, verbose = FALSE)
+pbmc.integrated <- RunPCA(pbmc.integrated, npcs = 30, verbose = FALSE)
+pbmc.integrated <- RunUMAP(pbmc.integrated, reduction = "pca", dims = 1:30, verbose = FALSE)
+
+##################################################
+
+pbmc.rna = pbmc.list$`10x Chromium (v3)`
+
+saveRDS(pbmc.rna, file='pbmc_RNA_reference_10xv3.rds')
+
+
+
+
+# pbmc.rna <- NormalizeData(pbmc.rna)
+# pbmc.rna <- FindVariableFeatures(pbmc.rna)
+# pbmc.rna <- ScaleData(pbmc.rna)
+# pbmc.rna <- RunPCA(pbmc.rna)
+# pbmc.rna <- RunUMAP(pbmc.rna, dims = 1:30)
+
+
+
+################################################################################
+# ATAC
+################################################################################
+
+### get data from loom:
+f_loom = '/staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021/atac_qc_multiplet_merged/jupyter/cell_region_loom/Stanford_2cell_region-all.loom'
+f_frag = '/staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/data_freeze_Jun2021/atac_preprocess/multiplet_tagged/fragments/Stanford_2.sinto.mm.fragments.tsv.gz'
+atacloomcon <- Connect(filename = f_loom, mode = "r")
+atacloomcon
+atac_tmp <- as.Seurat(atacloomcon, assay='ATAC')
+atacloomcon$close_all()
+
+
+# correctly parse regions (default delims are '-','-')
+regions = StringToGRanges(
+    rownames(GetAssayData(atac_tmp, slot = "counts", assay='ATAC')), 
+    sep=c(':','-')
+    )
+# create chromatin assay
+chromatinassay = CreateChromatinAssay(
+    counts=GetAssayData(atac_tmp, slot = "counts", assay='ATAC'),
+    genome='hg38',
+    fragments = f_frag,
+    ranges=regions
+    )
+    #annotation=annotation)
+
+atac <- CreateSeuratObject(counts = chromatinassay, assay='ATAC')
+
+
+
+library(stringr)
+
+
+# ATAC analysis add gene annotation information
+annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86)
+
+# use chr prefix:
+ucsc.levels <- str_replace(string=paste("chr",seqlevels(annotations),sep=""), pattern="chrMT", replacement="chrM")
+seqlevels(annotations) <- ucsc.levels
+
+genome(annotations) <- "hg38"
+
+saveRDS(annotations, file="granges_annotation.rds")
+
+Annotation(atac) <- annotations
+
+# We exclude the first dimension as this is typically correlated with sequencing depth
+atac <- RunTFIDF(atac)
+atac <- FindTopFeatures(atac, min.cutoff = "q0")
+atac <- RunSVD(atac)
+atac <- RunUMAP(atac, reduction = "lsi", dims = 2:30, reduction.name = "umap.atac", reduction.key = "atacUMAP_")
+
+
+
+##################################################
+# Identify RNA-ATAC anchors
+
+
+
+
+
+# quantify gene activity
+gene.activities <- GeneActivity(atac, features = VariableFeatures(pbmc.rna))
+# gene.activities <- gene.activities[rownames(gene.activities)!="",]
+
+# add gene activities as a new assay
+atac[["ACTIVITY"]] <- CreateAssayObject(counts = gene.activities)
+
+# normalize gene activities
+DefaultAssay(atac) <- "ACTIVITY"
+atac <- NormalizeData(atac)
+atac <- ScaleData(atac, features = rownames(atac))
+
+# Identify anchors
+transfer.anchors <- FindTransferAnchors(reference = pbmc.rna,
+    query = atac,
+    features = VariableFeatures(object = pbmc.rna),
+    reference.assay = "RNA",
+    query.assay = "ACTIVITY",
+    reduction = "cca")
+
+
+# predict celltype
+celltype.predictions <- TransferData(
+    anchorset = transfer.anchors,
+    refdata = pbmc.rna$CellType,
+    weight.reduction = atac[["lsi"]],
+    dims = 2:30)
+
+pbmc.atac <- AddMetaData(pbmc.atac, metadata = celltype.predictions)
+
+
+
+md = celltype.predictions
+sample_id = 'Stanford_2'
+pred_thr = 0.7
+
+tmp = data.frame(
+      composite_sample_id = paste0(rownames(md),'-',sample_id),
+      barcode = rownames(md),
+      sample_id = sample_id,
+      cell_type = md$predicted.id,
+      cell_type_pred_score = md$prediction.score.max
+      )
+tmp$cell_type_hiconf_70 = tmp$cell_type
+tmp$cell_type_hiconf_70[tmp$cell_type_pred_score<pred_thr] = 'Unknown'
+
+table(tmp$cell_type)
+table(tmp$cell_type_hiconf_70)
+
+write.table(tmp,
+            file=paste0(sample_id,'__cell_type_seurat.txt',
+            sep='\t', row.names=FALSE, quote=FALSE
+            )
+
+
+
+
+
+
+
+
+
+
+hist(celltype.predictions$prediction.score.max)
+
+################################################################################
+################################################################################
+
+object=atac
+features=VariableFeatures(pbmc.rna)
+biotypes = "protein_coding"
+max.width = 500000
+extend.upstream = 2000
+extend.downstream = 0
+
+assay <- 'ATAC'#SetIfNull(x = assay, y = DefaultAssay(object = object))
+annotation <- Annotation(object = object[[assay]])
+transcripts <- Signac:::CollapseToLongestTranscript(ranges = annotation)
+
+if (!is.null(x = biotypes)) {
+    transcripts <- transcripts[transcripts$gene_biotype %in% biotypes]
+}
+
+if (!is.null(x = features)) {
+    transcripts <- transcripts[transcripts$gene_name %in% features]
+}
+if (!is.null(x = max.width)) {
+    transcript.keep <- which(x = width(x = transcripts) < max.width)
+    transcripts <- transcripts[transcript.keep]
+}
+
+transcripts <- Extend(
+    x = transcripts,
+    upstream = extend.upstream,
+    downstream = extend.downstream
+)
+
+frags <- Fragments(object = object[[assay]])
+cells <- colnames(x = object[[assay]])
+counts <- FeatureMatrix(
+    fragments = frags,
+    features = transcripts,
+    cells = cells,
+    verbose = verbose
+)
+
+
+
+
+
+
+
+
+
+
+
