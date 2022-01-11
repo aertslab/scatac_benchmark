@@ -1,0 +1,23 @@
+
+nextflow pull vib-singlecell-nf/vsn-pipelines -r v0.25.0
+#nextflow pull vib-singlecell-nf/vsn-pipelines -r develop
+
+
+# version 0.25.0:
+VSN=/staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis2/scRNA/vsn-pipelines/main.nf
+# develop (0.26.0)
+VSN=/staging/leuven/stg_00002/lcb/cflerin/testruns/vib-singlecell-nf/vsn-pipelines/main.nf
+
+module load Nextflow
+
+nextflow config $VSN \
+    -profile tenx,harmony,hg38,singularity,pcacv,utils_sample_annotate,utils_cell_annotate \
+    > Sanger_multiome.vsn-pipelines-dev.harmony.config
+
+
+time nextflow -C Sanger_multiome.vsn-pipelines.harmony.config \
+    run $VSN \
+    -entry harmony \
+    -resume
+
+

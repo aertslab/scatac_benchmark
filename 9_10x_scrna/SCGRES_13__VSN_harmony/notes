@@ -1,0 +1,21 @@
+
+
+
+# version 0.25.0:
+###VSN=/staging/leuven/stg_00002/lcb/cflerin/analysis/pbmc_atac/analysis/scRNA/vsn-pipelines/main.nf
+#develop
+VSN=/staging/leuven/stg_00002/lcb/cflerin/testruns/vib-singlecell-nf/vsn-pipelines/main.nf
+
+module load Nextflow
+
+nextflow config $VSN \
+    -profile tenx,harmony,hg38,singularity,pcacv,utils_sample_annotate,utils_cell_annotate \
+    > SCGRES_13.vsn-pipelines-dev.harmony.config
+
+
+time nextflow -C SCGRES_13.vsn-pipelines.harmony.config \
+    run $VSN \
+    -entry harmony \
+    -resume
+
+
