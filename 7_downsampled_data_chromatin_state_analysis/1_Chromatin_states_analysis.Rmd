@@ -1,0 +1,367 @@
+---
+title: "Unveiling the features of DARs: Chromatin States"
+author: "Paula Soler-Vila"
+output: 
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "100%", fig.align = "center",
+  message = FALSE, warning = FALSE
+)
+options(width = 1200)
+options(scipen = 1)
+```
+
+
+### Load packages
+```{r}
+library(tidyverse)
+library(data.table)
+library(stringr)
+library(ggpubr)
+library(pheatmap)
+library(RColorBrewer)
+library(ComplexUpset)
+library(cotools)
+library(reshape2)
+library(gridExtra)
+library(grid)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(BSgenome)
+library(Repitools)
+library(UpSetR)
+library(GenomicRanges)
+library(cowplot)
+library(ggplotify)
+library(viridis)
+library(plyr)
+```
+
+### Variables and paths
+
+```{r}
+general_path <- "/Users/pauli/Desktop/Proyectos/Single-cell/scATAC_Benchmarking/"
+
+chrom_sizes_path <- paste0(general_path,"outside_files/chrom.sizes")
+gene_density_path <- paste0(general_path, "outside_files/Gene_density")
+path_libds <- paste0(general_path,"final_dars")
+
+
+patterns = c("E8E8E8E8E8E8", "E5E5E5E5E5E5",
+             "E3E3E3E3E3E3","E1E1E1E1E1E1",
+             "E9E9E9E9E9E9","E2E2E2E2E2E2",
+             "E12E12E12E12E12E12","E4E4E4E4E4E4",
+             "E7E7E7E7E7E7", "E6E6E6E6E6E6",
+             "E10E10E10E10E10E10", "E11E11E11E11E11E11")
+```
+
+### Load data
+
+```{r}
+# Genomic features
+chrom_sizes <- fread(chrom_sizes_path, header = F)
+gene_density <- fread(gene_density_path,
+                      header = T)[,c(1,6)]
+
+
+# Libraries features
+file_names <- list.files(path_libds, 
+                         pattern = "*B_cell__DARs.bed$", 
+                         full.names = T)
+
+final_output <- purrr::map_df(file_names, function(x) {
+  data <- as.data.frame(fread(x,sep = "\t"))
+  colnames(data) <- c("chrom", "chromStart", 
+                        "chromEnd", "cell_type","Log2FC", 
+                        "strand", "Adjusted_pval")
+  data$size <- abs(data$chromEnd - data$chromStart)
+  cbind(sample = str_split(str_split(x, "/")[[1]][9],"__")[[1]][2], data)
+})
+
+final_output <- final_output %>% mutate(library = case_when(
+                sample == "Broad_1" ~ "10x mtATAC 1",
+                sample == "Broad_2" ~ "10x mtATAC 2",
+                sample == "CNAG_1" ~ "10x ATAC C1",
+                sample == "CNAG_2" ~ "10x ATAC C2",
+                sample == "Harvard_1" ~ "BioRad ATAC 1",
+                sample == "Harvard_2" ~ "BioRad ATAC 2",
+                sample == "Sanger_1" ~ "10x Multiome 1",
+                sample == "Sanger_2" ~ "10x Multiome 2",
+                sample == "Stanford_1" ~ "10x ATAC A1",
+                sample == "Stanford_2" ~ "10x ATAC A2",
+                sample == "VIB_1" ~ "10x ATAC B1",
+                sample == "VIB_2" ~ "10x ATAC B2",
+                sample == "VIB_Hydrop_1" ~ "Hydrop ATAC 1",
+                sample == "VIB_Hydrop_2" ~ "Hydrop ATAC 2",
+                sample == "s3atac" ~ "s3 ATAC",
+                sample == "merged" ~ "Merged"))
+
+
+final_output <- final_output %>% mutate(color = case_when(
+                sample == "Broad_1" ~ "#9467bd",
+                sample == "Broad_2" ~ "#c5b0d5",
+                sample == "CNAG_1" ~ "#d62728",
+                sample == "CNAG_2" ~ "#ff9896",
+                sample == "Harvard_1" ~ "#1f77b4",
+                sample == "Harvard_2" ~ "#aec7e8",
+                sample == "Sanger_1" ~ "#8c564b",
+                sample == "Sanger_2" ~ "#c49c94",
+                sample == "Stanford_1" ~ "#ff7f0e",
+                sample == "Stanford_2" ~ "#ffbb78",
+                sample == "VIB_1" ~ "#2ca02c",
+                sample == "VIB_2" ~ "#98df8a",
+                sample == "VIB_Hydrop_1" ~ "#e377c2",
+                sample == "VIB_Hydrop_2" ~ "#f7b6d2",
+                sample == "s3atac" ~ "#7f7f7f",
+                sample == "merged" ~ "#111111"))
+
+
+final_output_GR <- makeGRangesListFromDataFrame(final_output,
+                  split.field = "library", names.field = "library" )
+
+
+# Chromatin states features
+chromHMM <- load(paste0(general_path,"outside_files/Chmm.All.Samples.common.bins.hg38.RData"))
+
+chromHMM_NBC_MBC <- as.data.frame(GenomeBinsChmm[,c(1,2,6,7,8,12)])
+chromHMM_NBC_MBC$states <- paste0(chromHMM_NBC_MBC$csMBC1_12_segments.bed,
+                    chromHMM_NBC_MBC$csMBC2_12_segments.bed,
+                    chromHMM_NBC_MBC$ncsMBC_12_segments.bed,
+                    chromHMM_NBC_MBC$NBCB1_12_segments.bed,
+                    chromHMM_NBC_MBC$NBCB2_12_segments.bed,
+                    chromHMM_NBC_MBC$NBCB3_12_segments.bed)
+
+# Consensus of chromHMM_NBC_MBC
+chromHMM_NBC_MBC_consensus <- subset(chromHMM_NBC_MBC, 
+                                     states %in% patterns)
+
+chromHMM_NBC_MBC_consensus_GR <- makeGRangesFromDataFrame(chromHMM_NBC_MBC_consensus[,c(1,2,3,6)],
+keep.extra.columns = T)
+
+head(chromHMM_NBC_MBC_consensus_GR)
+```
+
+
+# Number of DARs per library
+First, we are going to check the number of DARs that was defined by each library.
+
+```{r}
+nDARS_x_library <- melt(table(final_output$library))
+
+ggdotchart(nDARS_x_library, 
+     x = "Var1", 
+     y = "value",
+     xlab = FALSE,
+     ylab = FALSE,
+     sorting	= "none",
+     add = "segments",    
+     color = 'gray80',
+     rotate = TRUE,                             
+     dot.size = 10, 
+     label = round(nDARS_x_library$value),   
+     font.label = list(color = "black", 
+                       size = 9, vjust = 0.5), 
+     ggtheme = theme_pubr()) + 
+    theme(axis.text.x = element_text(angle = 90, 
+                                     hjust = 1, size=9),
+    axis.text.y = element_text(size=9)) + 
+    scale_y_continuous(limits=c(0, 13000)) + 
+    geom_hline(yintercept = 2000, linetype='dotted', 
+               col = 'black',size = 0.5)
+```
+
+# Distribution of the DARs per chromosome
+In order to assess a possible bias in the distribution of DARs, we decided to calculate their distribution across the entire genome. This distribution was normalized taking into account the sizes of the chromosome sizes and the gene density. Specifically, the gene density values were obtained from the published paper entitled: ["Mapping of scaffold/matrix attachment regions in human genome: a data mining exercise"](https://doi.org/10.1093/nar/gkz562).
+
+```{r}
+DAR_chrom <- table(final_output$library,final_output$chrom)
+
+biases <-  (chrom_sizes[order(chrom_sizes$V1),]$V2 / 1e6) * 
+  (gene_density[order(gene_density$Chromosome),]$`Gene density/Mb`)
+
+DAR_chrom_norm <- t(apply(DAR_chrom,1, "/", biases))
+
+pheatmap(DAR_chrom_norm, 
+         scale = "row",
+         border_color = "gray60",
+         cluster_rows = T,
+         cluster_cols = T,
+         fontsize_row= 10,
+         clustering_distance_rows = "euclidean",
+         clustering_distance_cols = "euclidean", 
+         clustering_method = "ward.D2",
+         cutree_rows = NA, 
+         cutree_cols = 5)
+```
+
+# Correlation of the log2FC & p value per library
+```{r}
+final_output_nit_merged = final_output[final_output$library != "merged",]
+
+ggplot(final_output_nit_merged, 
+     aes(x = Log2FC, y = -log10(Adjusted_pval), color = Log2FC)) + 
+     geom_point(size = 0.3)  + theme_pubr(base_size = 10) + 
+     facet_wrap(~ library, ncol = 5,scales = "free_y") +  
+     theme(legend.position="right")
+
+final_output_nit_merged$log10_adjusted_pval <- -log10(final_output_nit_merged$Adjusted_pval)
+
+ggboxplot(final_output_nit_merged, 
+  x = "library", 
+  y = "Log2FC",
+  fill = "gray70") + rotate() + 
+  geom_hline(yintercept =  median(final_output_nit_merged$Log2FC), 
+  linetype='dotted', col = 'blue')
+
+
+ggboxplot(final_output_nit_merged, 
+  x = "library", 
+  y = "log10_adjusted_pval", 
+  fill = "gray70")  + rotate()  + 
+  geom_hline(yintercept =  median(final_output_nit_merged$log10_adjusted_pval),
+             linetype='dotted', col = 'blue')
+```
+
+
+# Chromatin States analysis.
+The genome-wide map of the chromatin states for the 4 major B-cell subtypes (naive B cells (NBC), germinal center B cells (GCBC), memory B cells (MBC), and plasma cells (PC)) was downloaded from ["The Reference Epigenome and Regulatory Chromatin Landscape of Chronic Lymphocytic Leukemia"](https://www.nature.com/articles/s41591-018-0028-4). Specifically, 12 distinct chromatin states were defined at 200 base pairs of resolution in three different replicas for each B cell subpopulation.
+
+  - Active Promoter = E1
+  - Weak Promoter = E3
+  - Poised Promoter = E4
+  - Strong Enh = E2
+  - Strong Enh2 = E6
+  - Weak Enh = E5
+  - Transcription Transition = E7
+  - Transcription Elongation = E9
+  - Weak Transcription = E8
+  - Heterochrom,repressed = E10
+  - Polycomb Repressed = E12
+  - Heterochrom, low signal = E11
+
+```{r}
+results_chromHMM <- data.frame()
+
+for (i in (unique(final_output$library))){
+    print(i)
+    gr1 <- chromHMM_NBC_MBC_consensus_GR
+    gr2 <- final_output_GR[[i]]
+    m <- findOverlaps(gr1, gr2)
+    gr1.matched <- gr1[queryHits(m)]
+    # Add the metadata from gr2
+    mcols(gr1.matched) <- cbind.data.frame(
+    mcols(gr1.matched),
+    mcols(gr2[subjectHits(m)]));
+    
+    gr1.matched$library <- i
+    gr1.matched_df <- as.data.frame(unique(gr1.matched))
+    results_chromHMM <- rbind(results_chromHMM, gr1.matched_df)}
+
+observed <- t(table(results_chromHMM[,6], results_chromHMM[,7]))
+expected <- table(chromHMM_NBC_MBC_consensus_GR$csMBC1_12_segments.bed)
+  
+chromHMM_norm <- t(apply(observed, 1, "/", expected))
+
+
+order.chrom.states=c("E1","E3","E4",
+                 "E2","E6","E5",
+                 "E7","E9","E8",
+                 "E10","E12","E11")
+  
+names.chrom.states <- c("Active Promoter", "Weak Promoter",
+                      "Poised Promoter", "Strong Enh",
+                      "Strong Enh2", "Weak Enh",
+                      "Transcription Transition" ,
+                      "Transcription Elongation" ,
+                      "Weak Transcription" ,
+                      "Heterochrom,repressed",
+                      "Polycomb Repressed",
+                      "Heterochrom, low signal")
+
+col.chrom.states=c("#FF0000", "#FFC8E6", "#6E1E8C", 
+                   "#FFDC64", "#FF8200", "#FFFF00", 
+                   "#008C64", "#00FF00", "#C8FFC8", 
+                   "#787878", "#AAAAAA", "#F0F0F0")
+
+
+CHMM_features  <- data.frame(order.chrom.states,
+                             names.chrom.states,
+                             col.chrom.states)
+
+rownames(CHMM_features) = CHMM_features$order.chrom.states
+CHMM_features_orderet  <-CHMM_features[order(CHMM_features$order.chrom.states),]
+annotation_col = data.frame(Chromatin_States = factor(CHMM_features_orderet$names.chrom.states))
+rownames(annotation_col) = CHMM_features_orderet$order.chrom.states
+
+ann_colors = list(
+Chromatin_States = c("Active Promoter" = "#FF0000", 
+                     "Heterochrom,repressed" = "#787878",
+                     "Heterochrom, low signal" =  "#F0F0F0",
+                     "Polycomb Repressed"= "#AAAAAA",
+                     "Strong Enh" ="#FFDC64",
+                     "Weak Promoter" ="#FFC8E6",
+                     "Poised Promoter"= "#6E1E8C",
+                     "Weak Enh" ="#FFFF00",
+                     "Strong Enh2"= "#FF8200",
+                     "Transcription Transition"= "#008C64",
+                     "Weak Transcription" =  "#C8FFC8",
+                     "Transcription Elongation" = "#00FF00"))
+
+observed_melt <- melt(observed)
+observed_melt$Chromatin_States<- revalue(observed_melt$Var2,
+                           c("E1"="Active Promoter",
+                              "E2"="Strong Enh",
+                              "E3"="Weak Promoter",
+                              "E4"="Poised Promoter",
+                              "E5"="Weak Enh",
+                              "E6"="Strong Enh2",
+                              "E7"="Transcription Transition",
+                              "E8"="Weak Transcription",
+                              "E9"="Transcription Elongation",
+                              "E10"="Heterochrom,repressed",
+                              "E11"="Heterochrom, low signal",
+                              "E12"="Polycomb Repressed"))
+
+observed_melt$Color<- revalue(observed_melt$Chromatin_States,
+                           c("Active Promoter" = "#FF0000", 
+                     "Heterochrom,repressed" = "#787878",
+                     "Heterochrom, low signal" =  "#F0F0F0",
+                     "Polycomb Repressed"= "#AAAAAA",
+                     "Strong Enh" ="#FFDC64",
+                     "Weak Promoter" ="#FFC8E6",
+                     "Poised Promoter"= "#6E1E8C",
+                     "Weak Enh" ="#FFFF00",
+                     "Strong Enh2"= "#FF8200",
+                     "Transcription Transition"= "#008C64",
+                     "Weak Transcription" =  "#C8FFC8",
+                     "Transcription Elongation" = "#00FF00"))
+
+ggbarplot(observed_melt,
+ order = rev(c("BioRad ATAC 1", "BioRad ATAC 2",
+         "10x ATAC A1","10x ATAC A2",
+         "10x ATAC B1" ,"10x ATAC B2",
+         "10x ATAC C1" , "10x ATAC C2",
+         "10x mtATAC 1","10x mtATAC 2",
+         "10x Multiome 1", "10x Multiome 2", 
+         "Hydrop ATAC 1", "Hydrop ATAC 2",
+         "s3 ATAC","Merged")),   
+          x = "Var1", 
+          y = "value",
+          rotate = TRUE,  
+          palette = c("#FF0000", "#787878", "#F0F0F0", "#AAAAAA",
+                    "#FFDC64", "#FFC8E6", "#6E1E8C", "#FFFF00",
+                    "#FF8200", "#008C64", "#C8FFC8", "#00FF00"),
+          fill  = "Chromatin_States")
+
+```
+
+# Session Information
+
+```{r}
+sessionInfo()
+```
