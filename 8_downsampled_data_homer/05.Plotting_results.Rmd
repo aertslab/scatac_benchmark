@@ -1,0 +1,247 @@
+---
+title: "Plotting the results from HOMER"
+author: "Paula Soler-Vila"
+output: 
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, out.width = "100%", fig.align = "center",
+  message = FALSE, warning = FALSE
+)
+options(width = 1200)
+options(scipen = 1)
+```
+
+
+# Introduction
+The main purpose of this notebook is the characterization and interpretation of the differential accessible regions (DARs) identified in the different techniques analyzed. To do this, we have used [HOMER](http://homer.ucsd.edu/homer/index.html)
+which allows us to study the pattern distribution of specific motifs, find enriched motifs and genomically annotate these target genomic regions. 
+
+## Load packages
+```{r}
+library(tidyverse)
+library(data.table)
+library(stringr)
+library(ggpubr)
+library(pheatmap)
+library(RColorBrewer)
+library(cowplot)
+```
+
+## Variables
+```{r}
+color_palette <- c("#8dd3c7","#ffffb3","#bebada",
+                   "#fb8072","#80b1d3","#fdb462",
+                   "#b3de69","#fccde5","#d9d9d9",
+                   "#bc80bd","#ccebc5")
+
+color_palette2 <- c("#a6cee3","#1f78b4","#b2df8a","#33a02c",
+"#fb9a99","#e31a1c","#fdbf6f","#ff7f00","#cab2d6","#6a3d9a",
+"#ffff99","#b15928")
+
+coul <- colorRampPalette(brewer.pal(9, "Set1"))(14)
+```
+
+## Funtions
+
+```{r}
+density_plot <- function(TF_interest, color){
+  ggline(plot_type = "l", 
+   final_output_melt[final_output_melt$variable == TF_interest,],
+   "Distance_from_Center", "value",
+   size = 0.5,color = color) + 
+   facet_wrap(~library,ncol = 2,scales = "free_x") + 
+   theme(axis.text.x = element_text(angle = 90, hjust = 1, size=9),
+         axis.text.y = element_text(size=9))}
+```
+
+
+# Targetted motifs distribution
+
+```{r}
+path_aps <- "/Users/pauli/Desktop/Proyectos/Single-cell/scATAC_Benchmarking/HOMER_results/density_motifs_2k/"
+file_names <- list.files(path_aps, pattern = "*.txt",full.names = T)
+
+final_output <- purrr::map_df(file_names, function(x) {
+  data <- as.data.frame(fread(x))
+  data_selection <- data[,c(1,2,5,8,11,14,17,20,23)]
+  colnames(data_selection) <- c("Distance_from_Center",
+                                       "Oct11","Irf1","Pax5",
+                                       "Ebf1","SpiB","PU.1-IRF",
+                                       "Oct2","E2A")
+  
+  cbind(sample = str_split(str_split(x, "/")[[1]][11],"__")[[1]][2], 
+        data_selection)})
+
+# Format annotation label
+final_output <- final_output %>% mutate(library = case_when(
+                sample == "Broad_1" ~ "10x mtATAC 1",
+                sample == "Broad_2" ~ "10x mtATAC 2",
+                sample == "CNAG_1" ~ "10x ATAC C1",
+                sample == "CNAG_2" ~ "10x ATAC C2",
+                sample == "Harvard_1" ~ "BioRad ATAC 1",
+                sample == "Harvard_2" ~ "BioRad ATAC 2",
+                sample == "Sanger_1" ~ "10x Multiome 1",
+                sample == "Sanger_2" ~ "10x Multiome 2",
+                sample == "Stanford_1" ~ "10x ATAC A1",
+                sample == "Stanford_2" ~ "10x ATAC A2",
+                sample == "VIB_1" ~ "10x ATAC B1",
+                sample == "VIB_2" ~ "10x ATAC B2",
+                sample == "VIB_Hydrop_1" ~ "Hydrop ATAC 1",
+                sample == "VIB_Hydrop_2" ~ "Hydrop ATAC 2",
+                sample == "s3atac" ~ "s3 ATAC",
+                sample == "merged" ~ "Merged"))
+
+
+final_output_melt <- melt(final_output[,c(2:ncol(final_output))],
+                    id.vars = c("Distance_from_Center","library"))
+
+                                  
+oct11_p <- density_plot ("Oct11","#a6cee3")
+irf1_p <- density_plot ("Irf1", "#1f78b4")
+pax5_p <- density_plot ("Pax5","#b2df8a")
+ebf1_p <- density_plot ("Ebf1","#33a02c")
+spiB_p <- density_plot ("SpiB","#fb9a99")
+pu.1_irf_p <- density_plot ("PU.1-IRF","#e31a1c")
+oct2_p <- density_plot ("Oct2","#a6cee3")
+e2a_p <- density_plot ("E2A","#fdbf6f")
+```
+
+# Annotation stats
+
+```{r}
+path_aps <- "/Users/pauli/Desktop/Proyectos/Single-cell/scATAC_Benchmarking/HOMER_results/stats_2k/"
+
+file_names <- list.files(path_aps, pattern = "*.txt",full.names = T)
+final_output <- purrr::map_df(file_names, function(x) {
+  data <- as.data.frame(fread(x,header = T,skip = 14))
+  cbind(Sample = str_split(str_split(x, "/")[[1]][11],"__")[[1]][2], data)})
+
+final_output <- final_output %>% mutate(library = case_when(
+                Sample == "Broad_1" ~ "10x mtATAC 1",
+                Sample == "Broad_2" ~ "10x mtATAC 2",
+                Sample == "CNAG_1" ~ "10x ATAC C1",
+                Sample == "CNAG_2" ~ "10x ATAC C2",
+                Sample == "Harvard_1" ~ "BioRad ATAC 1",
+                Sample == "Harvard_2" ~ "BioRad ATAC 2",
+                Sample == "Sanger_1" ~ "10x Multiome 1",
+                Sample == "Sanger_2" ~ "10x Multiome 2",
+                Sample == "Stanford_1" ~ "10x ATAC A1",
+                Sample == "Stanford_2" ~ "10x ATAC A2",
+                Sample == "VIB_1" ~ "10x ATAC B1",
+                Sample == "VIB_2" ~ "10x ATAC B2",
+                Sample == "VIB_Hydrop_1" ~ "Hydrop ATAC 1",
+                Sample == "VIB_Hydrop_2" ~ "Hydrop ATAC 2",
+                Sample == "s3atac" ~ "s3 ATAC",
+                Sample == "merged" ~ "Merged"))
+
+
+## We are going to avoid the un-defined categories
+undefined <- c("DNA?","RC?", "LTR?","Unknown","SINE?")
+final_output_filt <- subset(final_output, 
+                            !(Annotation %in% undefined))
+final_output_melt <- melt(final_output_filt[,c(7,2,5)])
+colnames(final_output_melt) <- c("library","Annotation",
+                                 "variable","Log2 Ratio (obs/exp)")
+
+#svg(paste0(general_path,"plots/Annotation_stats.svg"),width = 10)
+
+ggbarplot(final_output_melt, 
+          x = "Annotation", 
+          y = "Log2 Ratio (obs/exp)",
+          fill = "Annotation", 
+          color = "white",
+          rotate = TRUE) + facet_wrap(~library,nrow = 2) + 
+          theme_minimal() + scale_fill_discrete(guide = "none")
+```
+
+# Plotting GO enrichment analysis
+
+## Biological_process
+```{r}
+path_aps  <- "/Users/pauli/Desktop/Proyectos/Single-cell/scATAC_Benchmarking/HOMER_results/GO_2k/"
+dir_names <- list.files(path_aps, full.names = T)
+file_names <- list.files(dir_names, pattern = "*biological_process.txt",full.names = T)
+
+final_output <- purrr::map_df(file_names, function(x) {
+  data <- as.data.frame(fread(x, fill = T,sep = "\t"))[,c(2,3,4)]
+  data_Bcell <- data[which(str_detect(data$Term, "B cell",
+                                      negate = FALSE)),]
+  data_Bcell_filt <- data_Bcell[data_Bcell$Enrichment < 0.05,]
+  data_Bcell_filt$Enrichment <- -log10(data_Bcell_filt$Enrichment)
+  cbind(Sample = str_split(str_split(x, "/")[[1]][11],"__")[[1]][2], 
+        data_Bcell_filt)})
+
+final_output <- final_output %>% mutate(library = case_when(
+                Sample == "Broad_1" ~ "10x mtATAC 1",
+                Sample == "Broad_2" ~ "10x mtATAC 2",
+                Sample == "CNAG_1" ~ "10x ATAC C1",
+                Sample == "CNAG_2" ~ "10x ATAC C2",
+                Sample == "Harvard_1" ~ "BioRad ATAC 1",
+                Sample == "Harvard_2" ~ "BioRad ATAC 2",
+                Sample == "Sanger_1" ~ "10x Multiome 1",
+                Sample == "Sanger_2" ~ "10x Multiome 2",
+                Sample == "Stanford_1" ~ "10x ATAC A1",
+                Sample == "Stanford_2" ~ "10x ATAC A2",
+                Sample == "VIB_1" ~ "10x ATAC B1",
+                Sample == "VIB_2" ~ "10x ATAC B2",
+                Sample == "VIB_Hydrop_1" ~ "Hydrop ATAC 1",
+                Sample == "VIB_Hydrop_2" ~ "Hydrop ATAC 2",
+                Sample == "s3atac" ~ "s3 ATAC",
+                Sample == "merged" ~ "Merged"))
+
+colnames(final_output) <- c("Sample","Term","-log10 pvalue","logP","library")
+
+ggbarplot(final_output, x = "Term", 
+          y = "-log10 pvalue",
+          fill = "library",                                
+          sorting = "descending", 
+          rotate = TRUE,  
+          position = position_stack(),
+          font.label = list(color = "white", size = 9, vjust = 0.5),
+          ggtheme = theme_pubr()) +  theme_minimal() + 
+          facet_wrap(~library,nrow = 2) + 
+          scale_fill_discrete(guide = FALSE) 
+```
+
+## Mysign
+```{r}
+path_aps  <- "/Users/pauli/Desktop/Proyectos/Single-cell/scATAC_Benchmarking/HOMER_results/GO_2k/"
+dir_names <- list.files(path_aps, full.names = T)
+file_names <- list.files(dir_names, pattern = "*msigdb.txt",full.names = T)
+
+final_output <- purrr::map_df(file_names, function(x) {
+  data <- as.data.frame(fread(x, fill = T,sep = "\t"))[,c(2,3,4)]
+  data_Bcell <- data[which(str_detect(data$Term, "BCELL", negate = FALSE)),]
+  data_Bcell_filt <- data_Bcell[data_Bcell$Enrichment < 0.000000000005,]
+  data_Bcell_filt$Enrichment <- -log10(data_Bcell_filt$Enrichment)
+  cbind(Sample = str_split(str_split(x, "/")[[1]][11],"__")[[1]][2], 
+        data_Bcell_filt)})
+
+colnames(final_output) <- c("Sample","Term","-log10 pvalue", "logP")
+
+ggbarplot(final_output, x = "Term", 
+          y = "-log10 pvalue",
+          fill = "Sample",                             
+          sorting = "descending",
+          rotate = TRUE,  
+          position = position_stack(),
+          font.label = list(color = "white", size = 9,  
+                            vjust = 0.5), 
+          ggtheme = theme_pubr()) +  theme_minimal() + 
+          facet_wrap(~Sample,nrow = 2) + 
+          scale_fill_discrete(guide = FALSE) +
+          geom_hline(yintercept = 60,linetype='dotted')
+```
+
+
+# Session Information
+
+```{r}
+sessionInfo()
+```
